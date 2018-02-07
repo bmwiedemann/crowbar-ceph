@@ -164,7 +164,7 @@ end
 
 def get_osd_id(device)
   osd_path = %x[mount | grep #{device} | awk '{print $3}'].tr("\n","")
-  osd_id = %x[cat #{osd_path}/whoami].tr("\n","")
+  osd_id = %x[cat #{osd_path}/whoami 2>/dev/null].tr("\n","")
   return osd_id
 end
 
