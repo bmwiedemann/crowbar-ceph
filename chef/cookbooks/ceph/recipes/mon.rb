@@ -22,7 +22,17 @@ service_type = node["ceph"]["mon"]["init_style"]
 
 mon_name = get_ceph_client_name(node)
 
+package "ceph-mgr"
+package "ceph-mon"
 directory "/var/lib/ceph/mon/ceph-#{mon_name}" do
+  owner "ceph"
+  group "ceph"
+  mode "0750"
+  recursive true
+  action :create
+end
+
+directory "/var/lib/ceph/mgr/ceph-#{mon_name}" do
   owner "ceph"
   group "ceph"
   mode "0750"
@@ -143,6 +153,9 @@ if service_type == "systemd"
   service "ceph-mon.target" do
     action :enable
   end
+  service "ceph-mgr.target" do
+    action :enable
+  end
   service "ceph.target" do
     action :enable
   end
@@ -186,4 +199,38 @@ end
       end
     end
   end
+end
+
+
+unless File.exist?("/var/lib/ceph/mgr/ceph-#{mon_name}/done")
+  keyring = "/var/lib/ceph/mgr/#{cluster}-#{mon_name}/keyring"
+  execute "create mgr keyring" do
+    command "ceph auth get-or-create mgr.#{mon_name} \
+             mon 'allow profile mgr' osd 'allow *' mds 'allow *' \
+             -o #{keyring} && \
+           chown ceph.ceph #{keyring}"
+    not_if { File.exist?(keyring) }
+  end
+  ruby_block "finalise" do
+    block do
+      ["done"].each do |ack|
+        File.open("/var/lib/ceph/mgr/ceph-#{mon_name}/#{ack}", "w").close
+      end
+    end
+  end
+end
+
+service "ceph_mgr" do
+  case service_type
+  when "upstart"
+    service_name "ceph-mgr-all-starter"
+    provider Chef::Provider::Service::Upstart
+  when "systemd"
+    service_name "ceph-mgr@#{mon_name}"
+  else
+    service_name "ceph"
+  end
+  supports restart: true, status: true
+  action [:enable, :start]
+  subscribes :restart, resources(template: "/etc/ceph/ceph.conf")
 end
